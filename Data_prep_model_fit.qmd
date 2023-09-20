@@ -49,9 +49,3 @@ for(m in models){
 ```
 
 We prepare the data setting the minimum number of routes to different values depending on the stratification used. For the coarse-grain stratification, we use the 3-route minimum cut-off to reflect the thresholds used by the CWS and USGS in their agency-led annual analyses. For the fine-grain stratification, we use a minimum of 1-route, to include the largest number of strata and to reflect the underlying design of the BBS. For all estimates, we also set a higher minimum for the number of non-zero observations on a given route to ensure that each included route and stratum has more reliable data for estimating change in abundance over time.
-
-Model fitting
-
-```{r}
-
-```
