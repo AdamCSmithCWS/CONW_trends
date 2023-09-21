@@ -36,9 +36,11 @@ for(m in models){
                   model = m,
                   model_variant = "spatial")
     
-    saveRDS(pm,paste0("data/",model,"_",stratification,".rds"))
+    saveRDS(pm,paste0("data/",m,"_",stratification,".rds"))
     
-    m <- run_model(pm)
+    m <- run_model(pm,
+                   output_basename = paste0("data/",m,"_",stratification),
+                   output_dir = "output")
     
     
   }
