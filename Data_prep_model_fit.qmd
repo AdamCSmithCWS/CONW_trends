@@ -16,13 +16,14 @@ We used the R package `bbsBayes2`.
 
 ```{r, message=FALSE}
 library(bbsBayes2)
+library(patchwork)
 library(tidyverse)
 
 models <- c("gamye","first_diff")
 stratifications <- c("latlong","bbs_usgs")
 species <- "Connecticut Warbler"
 
-for(m in models){
+for(mod in models){
   for(stratification in stratifications){
     min_n <- ifelse(stratification == "latlong",1,3)
     s <- stratify(by = stratification,
@@ -33,13 +34,13 @@ for(m in models){
     ps <- prepare_spatial(p,strata_map = load_map(stratification))
     
     pm <- prepare_model(ps,
-                  model = m,
+                  model = mod,
                   model_variant = "spatial")
     
-    saveRDS(pm,paste0("data/",m,"_",stratification,".rds"))
+    saveRDS(pm,paste0("data/",mod,"_",stratification,".rds"))
     
     m <- run_model(pm,
-                   output_basename = paste0("data/",m,"_",stratification),
+                   output_basename = paste0(mod,"_",stratification),
                    output_dir = "output")
     
     
@@ -51,3 +52,43 @@ for(m in models){
 ```
 
 We prepare the data setting the minimum number of routes to different values depending on the stratification used. For the coarse-grain stratification, we use the 3-route minimum cut-off to reflect the thresholds used by the CWS and USGS in their agency-led annual analyses. For the fine-grain stratification, we use a minimum of 1-route, to include the largest number of strata and to reflect the underlying design of the BBS. For all estimates, we also set a higher minimum for the number of non-zero observations on a given route to ensure that each included route and stratum has more reliable data for estimating change in abundance over time.
+
+Then we estimate population trajectories and trends, comparing them across these two models and stratifications.
+
+```{r}
+
+fits <- vector(mode = "list",4)
+names(fits) <- paste0(rep(models,each = 2),"_",rep(stratifications,2))
+
+pdf("temp_plots.pdf",
+    width = 11,
+    height = 8.5)
+for(mod in models){
+  for(stratification in stratifications){
+
+    tmp <- readRDS(paste0("output/",mod,"_",stratification,".rds"))
+fits[[paste0(mod,"_",stratification)]] <- tmp
+
+inds <- generate_indices(tmp)
+if(mod == "gamye"){
+inds_smooth <- generate_indices(tmp,alternate_n = "n_smooth")
+saveRDS(inds,paste0("output/indices_smooth_",mod,"_",stratification,".rds"))
+
+}
+saveRDS(inds,paste0("output/indices_",mod,"_",stratification,".rds"))
+
+trajs <- plot_indices(inds)
+if(mod == "gamye"){
+tt <- generate_trends(inds_smooth)
+}else{
+  tt <- generate_trends(inds)
+}
+map <- plot_map(tt)
+ plt <- map + trajs[[1]] + plot_annotation(title = paste(mod, stratification)) 
+print(plt)
+  }
+  }
+dev.off()
+
+
+```
