@@ -30,7 +30,7 @@ for(mod in models){
                   species = species)
     p <- prepare_data(s,
                       min_n_routes = min_n,
-                      min_max_route_years = 5)
+                      min_max_route_years = 2)
     ps <- prepare_spatial(p,strata_map = load_map(stratification))
     
     pm <- prepare_model(ps,
