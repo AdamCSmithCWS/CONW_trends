@@ -41,9 +41,14 @@ for(mod in models){
     
     m <- run_model(pm,
                    output_basename = paste0(mod,"_",stratification),
-                   output_dir = "output")
+                   output_dir = "output",
+                   iter_sampling = 3000)
     
-    
+    summ <- get_summary(m) %>% 
+      mutate(model = mod,
+             stratification = stratification)
+    saveRDS(summ,paste0("output/parameter_summary_",mod,"_",stratification,".rds"))
+  
   }
 }
 
@@ -55,6 +60,28 @@ We prepare the data setting the minimum number of routes to different values dep
 
 Then we estimate population trajectories and trends, comparing them across these two models and stratifications.
 
+for(mod in models){
+
+for(stratification in stratifications){
+
+tmp \<- readRDS(paste0("output/",mod,"\_",stratification,".rds"))
+
+summ \<- get_summary(m) %\>%
+
+mutate(model = mod,
+
+stratification = stratification)
+
+saveRDS(summ,paste0("output/parameter_summary\_",mod,"\_",stratification,".rds"))
+
+summ_out \<- bind_rows(summ_out,summ)
+
+fits\[\[paste0(mod,"\_",stratification)\]\] \<- tmp
+
+}
+
+}
+
 ```{r}
 
 fits <- vector(mode = "list",4)
@@ -63,11 +90,19 @@ names(fits) <- paste0(rep(models,each = 2),"_",rep(stratifications,2))
 pdf("temp_plots.pdf",
     width = 11,
     height = 8.5)
-for(mod in models){
+for(mod in models[2]){
   for(stratification in stratifications){
 
     tmp <- readRDS(paste0("output/",mod,"_",stratification,".rds"))
-fits[[paste0(mod,"_",stratification)]] <- tmp
+
+    summ <- get_summary(tmp) %>% 
+      mutate(model = mod,
+             stratification = stratification)
+    summ <- readRDS(paste0("output/parameter_summary_",mod,"_",stratification,".rds"))
+  summ_out <- bind_rows(summ_out,summ)
+    fits[[paste0(mod,"_",stratification)]] <- tmp
+  }
+}
 
 inds <- generate_indices(tmp)
 if(mod == "gamye"){
