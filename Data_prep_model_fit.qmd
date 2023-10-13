@@ -22,7 +22,8 @@ library(tidyverse)
 models <- c("gamye","first_diff")
 stratifications <- c("latlong","bbs_usgs")
 species <- "Connecticut Warbler"
-
+refit <- FALSE
+if(refit){
 for(mod in models){
   for(stratification in stratifications){
     min_n <- ifelse(stratification == "latlong",1,3)
@@ -51,79 +52,573 @@ for(mod in models){
   
   }
 }
-
+}
 
 
 ```
 
-We prepare the data setting the minimum number of routes to different values depending on the stratification used. For the coarse-grain stratification, we use the 3-route minimum cut-off to reflect the thresholds used by the CWS and USGS in their agency-led annual analyses. For the fine-grain stratification, we use a minimum of 1-route, to include the largest number of strata and to reflect the underlying design of the BBS. For all estimates, we also set a higher minimum for the number of non-zero observations on a given route to ensure that each included route and stratum has more reliable data for estimating change in abundance over time.
+We prepare the data setting the minimum number of routes to different values depending on the stratification used. For the coarse-grain stratification, we use the 3-route minimum cut-off to reflect the thresholds used by the CWS and USGS in their annual analyses. For the fine-grain stratification, we use a minimum of 1-route, to include the largest number of strata and to reflect the underlying design of the BBS. For all estimates, we also set a higher minimum for the number of non-zero observations on a given route to ensure that each included route and stratum has more reliable data for estimating change in abundance over time.
 
 Then we estimate population trajectories and trends, comparing them across these two models and stratifications.
-
-for(mod in models){
-
-for(stratification in stratifications){
-
-tmp \<- readRDS(paste0("output/",mod,"\_",stratification,".rds"))
-
-summ \<- get_summary(m) %\>%
-
-mutate(model = mod,
-
-stratification = stratification)
-
-saveRDS(summ,paste0("output/parameter_summary\_",mod,"\_",stratification,".rds"))
-
-summ_out \<- bind_rows(summ_out,summ)
-
-fits\[\[paste0(mod,"\_",stratification)\]\] \<- tmp
-
-}
-
-}
 
 ```{r}
 
 fits <- vector(mode = "list",4)
 names(fits) <- paste0(rep(models,each = 2),"_",rep(stratifications,2))
+summ_out <- NULL
+indices_out <- NULL
+trends_out <- NULL
 
-pdf("temp_plots.pdf",
-    width = 11,
-    height = 8.5)
-for(mod in models[2]){
+
+for(mod in models){
   for(stratification in stratifications){
 
     tmp <- readRDS(paste0("output/",mod,"_",stratification,".rds"))
 
-    summ <- get_summary(tmp) %>% 
-      mutate(model = mod,
-             stratification = stratification)
-    summ <- readRDS(paste0("output/parameter_summary_",mod,"_",stratification,".rds"))
+    # summ <- get_summary(tmp) %>% 
+    #   mutate(model = mod,
+    #          stratification = stratification)
+  
+      summ <- readRDS(paste0("output/parameter_summary_",mod,"_",stratification,".rds"))
   summ_out <- bind_rows(summ_out,summ)
     fits[[paste0(mod,"_",stratification)]] <- tmp
+  
+
+
+
+## group latlong strata into original BBS strata
+if(stratification == "latlong"){
+  
+    bbs_usgs <- load_map("bbs_usgs")%>%
+      select(-area_sq_km) %>% 
+      rename(bbs_strata = strata_name,
+             Country = country)
+    
+    
+    strata_join <- load_map(stratification) %>% 
+    filter(strata_name %in% tmp$meta_strata$strata_name) %>%
+    sf::st_join(.,bbs_usgs,
+                largest = TRUE,
+                left = TRUE) %>% # intersection
+    sf::st_drop_geometry() %>%
+    mutate(bbs_strata = ifelse(is.na(bbs_strata),"other",bbs_strata))
+
+      # generate trajectories for original BBS strata
+  inds_tmp <- generate_indices(tmp,alternate_n = "n",
+                                    regions = c("Country","bbs_strata"),
+                                    regions_index = strata_join,
+                                    hpdi = TRUE,
+                                    start_year = 1970)
+    saveRDS(inds_tmp,paste0("output/inds_comp_",mod,"_",stratification,".rds"))
+    
+    indices_tmp <- inds_tmp$indices %>% 
+      mutate(model = mod,
+             stratification = stratification,
+             summary_type = "composite",
+             type = "full")
+    indices_out <- bind_rows(indices_out,
+                          indices_tmp)
+    
+    tt_long <- generate_trends(inds_tmp,
+                               min_year = 1970,
+                               prob_decrease = c(0,30,50))
+    tt_short <- generate_trends(inds_tmp,
+                               min_year = 2012,
+                               prob_decrease = c(0,30,50))
+        tt_pre_90 <- generate_trends(inds_tmp,
+                               min_year = 1970,
+                               max_year = 1990,
+                               prob_decrease = c(0,30,50))
+            tt_post_90 <- generate_trends(inds_tmp,
+                               min_year = 1990,
+                               prob_decrease = c(0,30,50))
+    tt_t <- tt_long$trends %>% 
+      mutate(model = mod,
+             stratification = stratification,
+             summary_type = "composite",
+             type = "full")
+    trends_out <- bind_rows(trends_out,tt_t)
+    
+    tt_t <- tt_short$trends %>% 
+      mutate(model = mod,
+             stratification = stratification,
+             summary_type = "composite",
+             type = "full")
+    trends_out <- bind_rows(trends_out,tt_t)
+    
+        tt_t <- tt_pre_90$trends %>% 
+      mutate(model = mod,
+             stratification = stratification,
+             summary_type = "composite",
+             type = "full")
+    trends_out <- bind_rows(trends_out,tt_t)
+        tt_t <- tt_post_90$trends %>% 
+      mutate(model = mod,
+             stratification = stratification,
+             summary_type = "composite",
+             type = "full")
+    trends_out <- bind_rows(trends_out,tt_t)
+    
+  # trajs <- plot_indices(inds_comp, 
+  #                       add_observed_means = TRUE,
+  #                       add_number_routes = TRUE)
+  #   
+  
+  if(mod == "gamye"){
+     inds_tmp <- generate_indices(tmp,alternate_n = "n_smooth",
+                                    regions = c("Country","bbs_strata"),
+                                    regions_index = strata_join,
+                                    hpdi = TRUE,
+                                    start_year = 1970)
+    saveRDS(indices_tmp,paste0("output/inds_comp_smooth_",mod,"_",stratification,".rds"))
+    
+    indices_tmp <- inds_tmp$indices %>% 
+      mutate(model = mod,
+             stratification = stratification,
+             summary_type = "composite",
+             type = "smooth")
+    indices_out <- bind_rows(indices_out,
+                          indices_tmp)
+    
+    tt_long <- generate_trends(inds_tmp,
+                               min_year = 1970,
+                               prob_decrease = c(0,30,50))
+    tt_short <- generate_trends(inds_tmp,
+                               min_year = 2012,
+                               prob_decrease = c(0,30,50))
+            tt_pre_90 <- generate_trends(inds_tmp,
+                               min_year = 1970,
+                               max_year = 1990,
+                               prob_decrease = c(0,30,50))
+            tt_post_90 <- generate_trends(inds_tmp,
+                               min_year = 1990,
+                               prob_decrease = c(0,30,50))
+    tt_t <- tt_long$trends %>% 
+      mutate(model = mod,
+             stratification = stratification,
+             summary_type = "composite",
+             type = "smooth")
+    trends_out <- bind_rows(trends_out,tt_t)
+    
+    tt_t <- tt_short$trends %>% 
+      mutate(model = mod,
+             stratification = stratification,
+             summary_type = "composite",
+             type = "smooth")
+    trends_out <- bind_rows(trends_out,tt_t)
+    
+        tt_t <- tt_pre_90$trends %>% 
+      mutate(model = mod,
+             stratification = stratification,
+             summary_type = "composite",
+             type = "smooth")
+    trends_out <- bind_rows(trends_out,tt_t)
+    
+        tt_t <- tt_post_90$trends %>% 
+      mutate(model = mod,
+             stratification = stratification,
+             summary_type = "composite",
+             type = "smooth")
+    trends_out <- bind_rows(trends_out,tt_t)
+    
   }
+
+inds_tmp <- generate_indices(tmp,
+                         hpdi = TRUE,
+                                    start_year = 1970,
+                         regions = c("continent","stratum"))
+
+indices_tmp <- inds_tmp$indices %>% 
+      mutate(model = mod,
+             stratification = stratification,
+             summary_type = "simple",
+             type = "full")
+    indices_out <- bind_rows(indices_out,
+                          indices_tmp)
+    
+    tt_long <- generate_trends(inds_tmp,
+                               min_year = 1970,
+                               prob_decrease = c(0,30,50))
+    tt_short <- generate_trends(inds_tmp,
+                               min_year = 2012,
+                               prob_decrease = c(0,30,50))
+                tt_pre_90 <- generate_trends(inds_tmp,
+                               min_year = 1970,
+                               max_year = 1990,
+                               prob_decrease = c(0,30,50))
+            tt_post_90 <- generate_trends(inds_tmp,
+                               min_year = 1990,
+                               prob_decrease = c(0,30,50))
+            
+    tt_t <- tt_long$trends %>% 
+      mutate(model = mod,
+             stratification = stratification,
+             summary_type = "simple",
+             type = "full")
+    trends_out <- bind_rows(trends_out,tt_t)
+        tt_t <- tt_short$trends %>% 
+      mutate(model = mod,
+             stratification = stratification,
+             summary_type = "simple",
+             type = "full")
+    trends_out <- bind_rows(trends_out,tt_t)
+        tt_t <- tt_pre_90$trends %>% 
+      mutate(model = mod,
+             stratification = stratification,
+             summary_type = "simple",
+             type = "full")
+    trends_out <- bind_rows(trends_out,tt_t)
+        tt_t <- tt_post_90$trends %>% 
+      mutate(model = mod,
+             stratification = stratification,
+             summary_type = "simple",
+             type = "full")
+    trends_out <- bind_rows(trends_out,tt_t)
+    
+    saveRDS(inds_tmp,paste0("output/indices_",mod,"_",stratification,".rds"))
+
+if(mod == "gamye"){
+inds_tmp <- generate_indices(tmp,alternate_n = "n_smooth",
+                         hpdi = TRUE,
+                                    start_year = 1970,
+                         regions = c("continent","stratum"))
+saveRDS(inds_tmp,paste0("output/indices_smooth_",mod,"_",stratification,".rds"))
+
+indices_tmp <- inds_tmp$indices %>% 
+      mutate(model = mod,
+             stratification = stratification,
+             summary_type = "simple",
+             type = "smooth")
+    indices_out <- bind_rows(indices_out,
+                          indices_tmp)
+    
+    tt_long <- generate_trends(inds_tmp,
+                               min_year = 1970,
+                               prob_decrease = c(0,30,50))
+    tt_short <- generate_trends(inds_tmp,
+                               min_year = 2012,
+                               prob_decrease = c(0,30,50))
+                    tt_pre_90 <- generate_trends(inds_tmp,
+                               min_year = 1970,
+                               max_year = 1990,
+                               prob_decrease = c(0,30,50))
+            tt_post_90 <- generate_trends(inds_tmp,
+                               min_year = 1990,
+                               prob_decrease = c(0,30,50))
+            
+    tt_t <- tt_long$trends %>% 
+      mutate(model = mod,
+             stratification = stratification,
+             summary_type = "simple",
+             type = "smooth")
+    trends_out <- bind_rows(trends_out,tt_t)
+    
+    tt_t <- tt_short$trends %>% 
+      mutate(model = mod,
+             stratification = stratification,
+             summary_type = "simple",
+             type = "smooth")
+    trends_out <- bind_rows(trends_out,tt_t)
+        tt_t <- tt_pre_90$trends %>% 
+      mutate(model = mod,
+             stratification = stratification,
+             summary_type = "simple",
+             type = "smooth")
+    trends_out <- bind_rows(trends_out,tt_t)
+        tt_t <- tt_post_90$trends %>% 
+      mutate(model = mod,
+             stratification = stratification,
+             summary_type = "simple",
+             type = "smooth")
+    trends_out <- bind_rows(trends_out,tt_t)
+    
+
 }
 
-inds <- generate_indices(tmp)
-if(mod == "gamye"){
-inds_smooth <- generate_indices(tmp,alternate_n = "n_smooth")
-saveRDS(inds,paste0("output/indices_smooth_",mod,"_",stratification,".rds"))
-
-}
-saveRDS(inds,paste0("output/indices_",mod,"_",stratification,".rds"))
-
-trajs <- plot_indices(inds)
-if(mod == "gamye"){
-tt <- generate_trends(inds_smooth)
+  
 }else{
-  tt <- generate_trends(inds)
+  inds_tmp <- generate_indices(tmp,
+                         hpdi = TRUE,
+                                    start_year = 1970,
+                         regions = c("continent","country","stratum"))
+  indices_tmp <- inds_tmp$indices %>% 
+      mutate(model = mod,
+             stratification = stratification,
+             summary_type = "simple",
+             type = "full")
+    indices_out <- bind_rows(indices_out,
+                          indices_tmp)
+    
+    tt_long <- generate_trends(inds_tmp,
+                               min_year = 1970,
+                               prob_decrease = c(0,30,50))
+    tt_short <- generate_trends(inds_tmp,
+                               min_year = 2012,
+                               prob_decrease = c(0,30,50))
+    
+                        tt_pre_90 <- generate_trends(inds_tmp,
+                               min_year = 1970,
+                               max_year = 1990,
+                               prob_decrease = c(0,30,50))
+            tt_post_90 <- generate_trends(inds_tmp,
+                               min_year = 1990,
+                               prob_decrease = c(0,30,50))
+            
+            
+    tt_t <- tt_long$trends %>% 
+      mutate(model = mod,
+             stratification = stratification,
+             summary_type = "simple",
+             type = "full")
+    trends_out <- bind_rows(trends_out,tt_t)
+    
+    tt_t <- tt_short$trends %>% 
+      mutate(model = mod,
+             stratification = stratification,
+             summary_type = "simple",
+             type = "full")
+    trends_out <- bind_rows(trends_out,tt_t)
+        tt_t <- tt_pre_90$trends %>% 
+      mutate(model = mod,
+             stratification = stratification,
+             summary_type = "simple",
+             type = "full")
+    trends_out <- bind_rows(trends_out,tt_t)
+        tt_t <- tt_post_90$trends %>% 
+      mutate(model = mod,
+             stratification = stratification,
+             summary_type = "simple",
+             type = "full")
+    trends_out <- bind_rows(trends_out,tt_t)
+    
+    saveRDS(inds_tmp,paste0("output/indices_",mod,"_",stratification,".rds"))
+
+if(mod == "gamye"){
+inds_tmp <- generate_indices(tmp,alternate_n = "n_smooth",
+                         hpdi = TRUE,
+                                    start_year = 1970,
+                         regions = c("continent","country","stratum"))
+
+indices_tmp <- inds_tmp$indices %>% 
+      mutate(model = mod,
+             stratification = stratification,
+             summary_type = "simple",
+             type = "smooth")
+    indices_out <- bind_rows(indices_out,
+                          indices_tmp)
+    
+    tt_long <- generate_trends(inds_tmp,
+                               min_year = 1970,
+                               prob_decrease = c(0,30,50))
+    tt_short <- generate_trends(inds_tmp,
+                               min_year = 2012,
+                               prob_decrease = c(0,30,50))
+            tt_pre_90 <- generate_trends(inds_tmp,
+                               min_year = 1970,
+                               max_year = 1990,
+                               prob_decrease = c(0,30,50))
+            tt_post_90 <- generate_trends(inds_tmp,
+                               min_year = 1990,
+                               prob_decrease = c(0,30,50))
+            
+    tt_t <- tt_long$trends %>% 
+      mutate(model = mod,
+             stratification = stratification,
+             summary_type = "simple",
+             type = "smooth")
+    trends_out <- bind_rows(trends_out,tt_t)
+    
+    tt_t <- tt_short$trends %>% 
+      mutate(model = mod,
+             stratification = stratification,
+             summary_type = "simple",
+             type = "smooth")
+    trends_out <- bind_rows(trends_out,tt_t)
+        tt_t <- tt_pre_90$trends %>% 
+      mutate(model = mod,
+             stratification = stratification,
+             summary_type = "simple",
+             type = "smooth")
+    trends_out <- bind_rows(trends_out,tt_t)
+        tt_t <- tt_post_90$trends %>% 
+      mutate(model = mod,
+             stratification = stratification,
+             summary_type = "simple",
+             type = "smooth")
+    trends_out <- bind_rows(trends_out,tt_t)
+    
+
+saveRDS(inds_smooth,paste0("output/indices_smooth_",mod,"_",stratification,".rds"))
+
 }
-map <- plot_map(tt)
- plt <- map + trajs[[1]] + plot_annotation(title = paste(mod, stratification)) 
-print(plt)
+
+}
+
+
+
   }
   }
+
+saveRDS(trends_out,"output/trends_out.rds")
+saveRDS(summ_out,"output/summ_out.rds")
+saveRDS(indices_out,"output/indices_out.rds")
+
+```
+
+The similarities and differences in trends across the different models and stratifications reflect conclusions and inferences about the species' status about which we should be more or less confident.
+
+The broad-scale status assessments are generally similar across the different models and stratifications.
+
+
+```{r, echo=FALSE,eval=FALSE}
+# compile annual indices
+
+
+# ind_full_gamye_bbs <- readRDS("output/indices_gamye_bbs_usgs.rds")
+# ind_full_gamye_latlong <- readRDS("output/indices_gamye_latlong.rds")
+# ind_full_first_diff_bbs <- readRDS("output/indices_first_diff_bbs_usgs.rds")
+# ind_full_first_diff_latlong <- readRDS("output/indices_first_diff_latlong.rds")
+# ind_full_comp_first_diff_latlong <- readRDS("output/inds_comp_first_diff_latlong.rds")
+# ind_full_comp_gamye_latlong <- readRDS("output/inds_comp_gamye_latlong.rds")
+# 
+# ind_smooth_gamye_bbs <- readRDS("output/indices_smooth_gamye_bbs_usgs.rds")
+# ind_smooth_gamye_latlong <- readRDS("output/indices_smooth_gamye_latlong.rds")
+# ind_smooth_comp_gamye_latlong <- readRDS("output/inds_comp_smooth_gamye_latlong.rds")
+# 
+
+```
+
+Survey-wide and national trajectories
+
+```{r}
+
+model_names <- data.frame(model = c("first_diff","gamye"),
+                          Model = c("First-difference","GAMYE"))
+stratification_names <- data.frame(stratification = c("bbs_usgs","latlong"),
+                                   Stratification = c("BBS","1-degree cells"))
+broad_trajectories <- indices_out %>% 
+  filter(region_type %in% c("continent","country","Country"),
+         type == "full") %>% 
+  mutate(Region = ifelse(region == "continent","Survey-wide",region),
+         Region = factor(Region,levels = c("Survey-wide",
+                                           "United States of America",
+                                           "Canada"))) %>% 
+  inner_join(.,model_names,by = "model") %>% 
+  inner_join(.,stratification_names,by = "stratification")
+
+trajs <- ggplot(data = broad_trajectories,
+                aes(x = year,y = index))+
+  geom_ribbon(aes(ymin = index_q_0.05,ymax = index_q_0.95,
+                  fill = interaction(Model,Stratification, sep = " : ")), alpha = 0.3)+
+  geom_line(aes(colour = interaction(Model,Stratification, sep = " : ")))+
+  scale_colour_viridis_d(aesthetics = c("fill","colour"),
+                         end = 0.8)+
+  scale_y_continuous(trans = "log10")+
+  facet_grid(rows = vars(Region),
+             scales = "free")+
+  guides(fill = guide_legend(title = "Model : Stratification"),
+         colour = guide_legend(title = "Model : Stratification"))+
+  ylab(expression(Annual~relative~abundance~log[10]))+
+  theme_bw()+
+  theme(legend.position = "bottom",
+        legend.direction = "vertical")
+
+trajs
+```
+
+```{r, echo=FALSE}
+pdf("figures/trajectories.pdf",
+    height = 7.5,
+    width = 4)
+trajs
 dev.off()
+```
+
+
+Mapping the spatial pattern in trends.
+
+```{r}
+
+strata_trends <- trends_out %>% 
+  filter(region_type == "stratum",
+         (model == "gamye" & type == "smooth")|
+         (model == "first_diff" & type == "full")) %>% 
+  mutate(strata_name = region,
+         trend_se = width_of_95_percent_credible_interval/(1.96*2)) %>% 
+  inner_join(.,model_names,by = "model") %>% 
+  inner_join(.,stratification_names,by = "stratification")
+
+tcols <- trend_colour_breaks(strata_trends)
+pal <- tcols$pal
+strata_trends <- strata_trends %>% 
+  mutate(trends_map = tcols[["trends_plot_cats"]])
+
+latlong_map <- load_map("latlong") %>% 
+  inner_join(.,strata_trends,
+            by = "strata_name")
+
+
+bbs_map <- load_map("bbs_usgs") %>% 
+  inner_join(.,strata_trends,
+            by = "strata_name")
+
+bbox <- st_bbox(bbs_map)
+xlm <- bbox[c("xmin","xmax")]
+ylm <- bbox[c("ymin","ymax")]
+
+base_map <- load_map("bbs_usgs")
+
+latlong_trend <- ggplot()+
+  geom_sf(data = base_map,
+          fill = NA)+
+  geom_sf(data = latlong_map,
+          aes(fill = trends_map))+
+  coord_sf(xlim = xlm,ylim = ylm)+
+  scale_fill_manual(values = pal)+
+  guides(fill = guide_legend(reverse = TRUE,
+                             title = "Trend (%/year)"))+
+  theme_bw()+
+  facet_grid(rows = vars(Model),
+             cols = vars(start_year))
+  
+latlong_trend
 
 
 ```
+
+
+```{r}
+latlong_trend_se <- ggplot()+
+  geom_sf(data = base_map,
+          fill = NA)+
+  geom_sf(data = latlong_map,
+          aes(fill = trend_se))+
+  coord_sf(xlim = xlm,ylim = ylm)+
+  scale_fill_viridis_c()+
+  guides(fill = guide_colorbar(title = "SE of Trend"))+
+  theme_bw()+
+  facet_grid(rows = vars(Model),
+             cols = vars(start_year))
+  
+latlong_trend_se
+
+
+```
+
+```{r}
+pdf("figures/trend_maps_latlong.pdf",
+    width = 7.5,
+    height = 7)
+latlong_trend
+dev.off()
+
+pdf("figures/trend_se_maps_latlong.pdf",
+    width = 7.5,
+    height = 7)
+latlong_trend_se
+dev.off()
+
+
+
+```
+
