@@ -18,6 +18,8 @@ We used the R package `bbsBayes2`.
 library(bbsBayes2)
 library(patchwork)
 library(tidyverse)
+library(sf)
+source("functions/trend_colour_palette_apply.r")
 
 models <- c("gamye","first_diff")
 stratifications <- c("latlong","bbs_usgs")
@@ -448,7 +450,7 @@ indices_tmp <- inds_tmp$indices %>%
     trends_out <- bind_rows(trends_out,tt_t)
     
 
-saveRDS(inds_smooth,paste0("output/indices_smooth_",mod,"_",stratification,".rds"))
+saveRDS(inds_tmp,paste0("output/indices_smooth_",mod,"_",stratification,".rds"))
 
 }
 
@@ -488,7 +490,7 @@ The broad-scale status assessments are generally similar across the different mo
 
 ```
 
-Survey-wide and national trajectories
+## Survey-wide and national trajectories
 
 ```{r}
 
@@ -535,7 +537,7 @@ dev.off()
 ```
 
 
-Mapping the spatial pattern in trends.
+## Mapping the spatial pattern in trends.
 
 ```{r}
 
@@ -544,7 +546,12 @@ strata_trends <- trends_out %>%
          (model == "gamye" & type == "smooth")|
          (model == "first_diff" & type == "full")) %>% 
   mutate(strata_name = region,
-         trend_se = width_of_95_percent_credible_interval/(1.96*2)) %>% 
+         trend_se = width_of_95_percent_credible_interval/(1.96*2),
+         span = paste(start_year,end_year,sep = "-"),
+         nyears = end_year-start_year,
+         span = factor(span,levels = c("1970-2022","1970-1990",
+                                       "1990-2022","2012-2022"),
+                       ordered = TRUE)) %>% 
   inner_join(.,model_names,by = "model") %>% 
   inner_join(.,stratification_names,by = "stratification")
 
@@ -562,7 +569,7 @@ bbs_map <- load_map("bbs_usgs") %>%
   inner_join(.,strata_trends,
             by = "strata_name")
 
-bbox <- st_bbox(bbs_map)
+bbox <- sf::st_bbox(bbs_map)
 xlm <- bbox[c("xmin","xmax")]
 ylm <- bbox[c("ymin","ymax")]
 
@@ -570,7 +577,8 @@ base_map <- load_map("bbs_usgs")
 
 latlong_trend <- ggplot()+
   geom_sf(data = base_map,
-          fill = NA)+
+          fill = NA,
+          colour = grey(0.7))+
   geom_sf(data = latlong_map,
           aes(fill = trends_map))+
   coord_sf(xlim = xlm,ylim = ylm)+
@@ -578,8 +586,8 @@ latlong_trend <- ggplot()+
   guides(fill = guide_legend(reverse = TRUE,
                              title = "Trend (%/year)"))+
   theme_bw()+
-  facet_grid(rows = vars(Model),
-             cols = vars(start_year))
+  facet_grid(cols = vars(Model),
+             rows = vars(span))
   
 latlong_trend
 
@@ -597,8 +605,8 @@ latlong_trend_se <- ggplot()+
   scale_fill_viridis_c()+
   guides(fill = guide_colorbar(title = "SE of Trend"))+
   theme_bw()+
-  facet_grid(rows = vars(Model),
-             cols = vars(start_year))
+  facet_grid(cols = vars(Model),
+             rows = vars(span))
   
 latlong_trend_se
 
@@ -607,14 +615,14 @@ latlong_trend_se
 
 ```{r}
 pdf("figures/trend_maps_latlong.pdf",
-    width = 7.5,
-    height = 7)
+    width = 6,
+    height = 10)
 latlong_trend
 dev.off()
 
 pdf("figures/trend_se_maps_latlong.pdf",
-    width = 7.5,
-    height = 7)
+    width = 6,
+    height = 10)
 latlong_trend_se
 dev.off()
 
