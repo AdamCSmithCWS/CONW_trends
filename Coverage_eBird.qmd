@@ -150,6 +150,7 @@ overlap_map <- ggplot()+
 
 overlap_map
 ```
+
 ```{r,echo=FALSE,eval=FALSE}
 pdf("Figures/BBS_eBird_coverage.pdf",
     width = 7.5,
