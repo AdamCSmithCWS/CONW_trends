@@ -63,7 +63,7 @@ We prepare the data setting the minimum number of routes to different values dep
 
 Then we estimate population trajectories and trends, comparing them across these two models and stratifications.
 
-```{r}
+```{r, eval=FALSE}
 
 fits <- vector(mode = "list",4)
 names(fits) <- paste0(rep(models,each = 2),"_",rep(stratifications,2))
@@ -493,6 +493,11 @@ The broad-scale status assessments are generally similar across the different mo
 
 ```{r}
 
+trends_out <- readRDS("output/trends_out.rds")
+summ_out <- readRDS("output/summ_out.rds")
+indices_out <- readRDS("output/indices_out.rds")
+
+
 model_names <- data.frame(model = c("first_diff","gamye"),
                           Model = c("First-difference","GAMYE"))
 stratification_names <- data.frame(stratification = c("bbs_usgs","latlong"),
@@ -624,5 +629,107 @@ latlong_trend_se
 dev.off()
 
 
+
+```
+
+
+Plotting the trend estimates.
+
+```{r}
+
+highlevel_trends <- trends_out %>% 
+  filter(region_type %in% c("continent","country","Country"),
+         (model == "gamye" & type == "smooth")|
+         (model == "first_diff" & type == "full")) %>% 
+  mutate(Region = ifelse(region == "continent","Survey-wide",region),
+         Region = factor(Region,levels = c("Survey-wide",
+                                           "United States of America",
+                                           "Canada"))) %>% 
+  inner_join(.,model_names,by = "model") %>% 
+  inner_join(.,stratification_names,by = "stratification")%>% 
+  mutate(trend_se = width_of_95_percent_credible_interval/(1.96*2),
+         span = paste(start_year,end_year,sep = "-"),
+         nyears = end_year-start_year,
+         span = factor(span,levels = rev(c("1970-2022","1970-1990",
+                                       "1990-2022","2012-2022")),
+                       ordered = TRUE)) 
+
+
+
+trend_plot <- ggplot(data = highlevel_trends,
+                     aes(x = span,y = trend,
+                         group = interaction(Model,Stratification, sep = " : ")))+
+  geom_errorbar(aes(ymin = trend_q_0.05,ymax = trend_q_0.95,
+                  colour = interaction(Model,Stratification, sep = " : ")), alpha = 0.6,
+                width = 0,
+                position = position_dodge(width = 0.4))+
+  geom_point(aes(colour = interaction(Model,Stratification, sep = " : ")),
+                position = position_dodge(width = 0.4))+
+  geom_hline(yintercept = 0)+
+  scale_colour_viridis_d(aesthetics = c("fill","colour"),
+                         end = 0.8)+
+  facet_grid(rows = vars(Region),
+             scales = "fixed")+
+  guides(colour = guide_legend(title = "Model : Stratification",
+                               reverse = TRUE))+
+  ylab("Trend (%/year)")+
+  xlab("")+
+  theme_bw()+
+  theme(legend.position = "bottom",
+        legend.direction = "vertical")+
+  coord_flip()
+
+
+
+trend_plot
+
+
+
+
+change_plot <- ggplot(data = highlevel_trends,
+                     aes(x = span,y = percent_change,
+                         group = interaction(Model,Stratification, sep = " : ")))+
+  geom_errorbar(aes(ymin = percent_change_q_0.05,ymax = percent_change_q_0.95,
+                  colour = interaction(Model,Stratification, sep = " : ")), alpha = 0.6,
+                width = 0,
+                position = position_dodge(width = 0.4))+
+  geom_point(aes(colour = interaction(Model,Stratification, sep = " : ")),
+                position = position_dodge(width = 0.4))+
+  geom_hline(yintercept = 0)+
+  scale_colour_viridis_d(aesthetics = c("fill","colour"),
+                         end = 0.8)+
+  #coord_cartesian()+
+  scale_y_continuous(breaks = c(-100,-80,-60,-40,-20,0,20,40,60,80,100))+
+  facet_grid(rows = vars(Region),
+             scales = "fixed")+
+  guides(colour = guide_legend(title = "Model : Stratification",
+                               reverse = TRUE))+
+  ylab("Percent change in population")+
+  xlab("")+
+  theme_bw()+
+  theme(legend.position = "bottom",
+        legend.direction = "vertical")+
+  coord_flip(ylim = c(-100,100))
+
+
+
+change_plot
+
+```
+
+```{r}
+pdf("figures/trends_high_level.pdf",
+    width = 6,
+    height = 10)
+trend_plot
+dev.off()
+
+write_csv(highlevel_trends,"High_level_trends.cv")
+
+pdf("figures/change_high_level.pdf",
+    width = 6,
+    height = 10)
+change_plot
+dev.off()
 
 ```
