@@ -595,6 +595,24 @@ latlong_trend <- ggplot()+
 latlong_trend
 
 
+
+bbs_trend <- ggplot()+
+  geom_sf(data = base_map,
+          fill = NA,
+          colour = grey(0.7))+
+  geom_sf(data = bbs_map,
+          aes(fill = trends_map))+
+  coord_sf(xlim = xlm,ylim = ylm)+
+  scale_fill_manual(values = pal)+
+  guides(fill = guide_legend(reverse = TRUE,
+                             title = "Trend (%/year)"))+
+  theme_bw()+
+  facet_grid(cols = vars(Model),
+             rows = vars(span))
+  
+bbs_trend
+
+
 ```
 
 ```{r}
@@ -612,6 +630,20 @@ latlong_trend_se <- ggplot()+
   
 latlong_trend_se
 
+bbs_trend_se <- ggplot()+
+  geom_sf(data = base_map,
+          fill = NA)+
+  geom_sf(data = bbs_map,
+          aes(fill = trend_se))+
+  coord_sf(xlim = xlm,ylim = ylm)+
+  scale_fill_viridis_c()+
+  guides(fill = guide_colorbar(title = "SE of Trend"))+
+  theme_bw()+
+  facet_grid(cols = vars(Model),
+             rows = vars(span))
+  
+bbs_trend_se
+
 
 ```
 
@@ -628,6 +660,19 @@ pdf("figures/trend_se_maps_latlong.pdf",
 latlong_trend_se
 dev.off()
 
+
+
+pdf("figures/trend_maps_bbs.pdf",
+    width = 6,
+    height = 10)
+bbs_trend
+dev.off()
+
+pdf("figures/trend_se_maps_bbs.pdf",
+    width = 6,
+    height = 10)
+bbs_trend_se
+dev.off()
 
 
 ```
