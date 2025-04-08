@@ -648,6 +648,44 @@ bbs_trend_se
 ```
 
 ```{r}
+
+species <- "Connecticut Warbler"
+
+ebirdst_download_status(species)
+abd_seasonal_percent <- load_raster(species = species,
+                                    product = "proportion-population", 
+                                 period = "seasonal", #metric = "mean", 
+                                 resolution = "27km") #3km high resolution
+abd_breeding_percent <- clamp(abd_seasonal_percent$breeding*100,
+                              lower = 0.0001, values = FALSE)
+
+ebird_breed <- ggplot()+
+    geom_sf(data = base_map,
+          fill = NA,
+          colour = "white")+
+  geom_spatraster(data = abd_breeding_percent,
+                  maxcell = 1e6)+
+  geom_sf(data = base_map,
+          fill = NA,
+          colour = grey(0.8))+
+    geom_sf(data = latlong_map,
+          fill = NA,
+          colour = grey(0.7),
+          linewidth = 0.1)+
+  coord_sf(xlim = xlm,ylim = ylm)+
+  scale_fill_viridis_c(na.value = "white")+
+  guides(fill = guide_colourbar(reverse = FALSE,
+                             title = "Percent of\nbreeding\npopulation"))+
+  theme_bw()
+
+
+pdf("figures/eBird_breeding_distribution.pdf",
+    width = 6,
+    height = 5)
+print(ebird_breed)
+dev.off()
+
+
 pdf("figures/trend_maps_latlong.pdf",
     width = 6,
     height = 10)
@@ -676,7 +714,6 @@ dev.off()
 
 
 ```
-
 
 Plotting the trend estimates.
 
@@ -777,4 +814,17 @@ pdf("figures/change_high_level.pdf",
 change_plot
 dev.off()
 
+```
+
+```{r}
+
+prob_decl_30_50 <- highlevel_trends %>% 
+  filter(start_year == 2012) %>% 
+  group_by(region, stratification) %>% 
+  summarise(min_prob_30 = min(prob_decrease_30_percent),
+            max_prob_30 = max(prob_decrease_30_percent),
+            min_prob_50 = min(prob_decrease_50_percent),
+            max_prob_50 = max(prob_decrease_50_percent),
+            min_p_change = min(percent_change),
+            max_p_change = max(percent_change))
 ```

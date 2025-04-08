@@ -6,7 +6,7 @@ editor: visual
 
 ## Proportion of breeding population with BBS monitoring
 
-The goal is to use eBird status and trend results to calculate the proportion of Connecticut Warbler breeding season population that is within the region with BBS monitoring data (i.e., the coverage of the population by the BBS).
+The goal is to use eBird status and trend results to calculate the proportion of `species` breeding season population that is within the region with BBS monitoring data (i.e., the coverage of the population by the BBS).
 
 -   It will also be worth exploring the Boreal Avian Modeling estimates of breeding season population.
 
@@ -14,9 +14,7 @@ The goal is to use eBird status and trend results to calculate the proportion of
 
 -   method assumes a relatively stationary population during a survey-season (breeding season or non-breeding season, but not applicable to migration monitoring yet)
 
--   method also assumes that the current distribution/abundance map encompasses the species distribution in 1966.
-
-    -   Note: If the species' range has shifted, areas with monitoring data 50-years ago but no modeled abundance today, some assumptions will be required...
+-   If the species' range has shifted, we will need to make some strong assumptions about how to link historical breeding distributions (e.g., 1970) with the available data on current breeding ranges (e.g., areas with monitoring data 50-years ago but no modeled abundance today).
 
 ## downloading eBird seasonal abundance
 
@@ -30,95 +28,167 @@ library(patchwork)
 
 ```
 
-##Extraction for Connecticut Warbler
+## Extraction for Connecticut Warbler
 
 Download species data and load seasonal mean abundance
 
-```{r}
+```{r, message=FALSE,warning=FALSE}
 
 species <- "Connecticut Warbler"
 
-#path <- ebirdst_download(species)
-abd_seasonal_percent <- load_raster(path, product = "percent-population", 
+ebirdst_download_status(species)
+abd_seasonal_percent <- load_raster(species = species,
+                                    product = "proportion-population", 
                                  period = "seasonal", #metric = "mean", 
-                                 resolution = "hr") #3km high resolution
+                                 resolution = "3km") #3km high resolution
 abd_breeding_percent <- abd_seasonal_percent$breeding
 
-abd_seasonal_abundance <- load_raster(path, product = "abundance", 
+abd_seasonal_abundance <- load_raster(species = species,
+                                    product = "abundance", 
                                  period = "seasonal", metric = "mean", 
-                                 resolution = "hr") #3km high resolution
+                                 resolution = "3km") #3km high resolution
 abd_breeding_abundance <- abd_seasonal_abundance$breeding
 
 
 ```
 
-Calculate the mean relative abundance within each stratum. First load the degree-block stratification map, and adjust the crs to match the eBird map.
+Calculate the mean relative abundance within each stratum. First load the degree-block stratification map, and adjust the coordinate reference system (crs) to match the crs of the eBird map.
 
 ```{r}
 
-latlong_orig <- load_map("latlong") 
+latlong_orig <- bbsBayes2::load_map("latlong") # version with original crs
 
-latlong <- load_map("latlong")%>% #loading the 1-degree cell strata
+latlong <- bbsBayes2::load_map("latlong")%>% #loading the 1-degree cell strata
   st_transform(st_crs(abd_breeding_percent)) 
 
   
+# extract(fun = sum()) generates sum of pixel values within latlong polygons
+percent_strata <- terra::extract(abd_breeding_percent,
+                          latlong,
+                          fun = sum, 
+                          na.rm = TRUE) %>% 
+  mutate(strata_name = latlong$strata_name)
 
-percent_strata <- extract(abd_breeding_percent,
+abundance_strata <- terra::extract(abd_breeding_abundance,
                           latlong,
                           fun = sum,
                           na.rm = TRUE) %>% 
   mutate(strata_name = latlong$strata_name)
 
-abundance_strata <- extract(abd_breeding_abundance,
-                          latlong,
-                          fun = sum,
+# abundance raster from BAM
+bam_rast <- rast("data/pred-CONW-CAN-Mean.tif")
+latlong_bam <- bbsBayes2::load_map("latlong")%>% #loading the 1-degree cell strata
+  st_transform(st_crs(bam_rast)) 
+
+density_strata_bam <- terra::extract(bam_rast,
+                          latlong_bam,
+                          fun = mean,
                           na.rm = TRUE) %>% 
-  mutate(strata_name = latlong$strata_name)
+  mutate(strata_name = latlong_bam$strata_name) %>% 
+  rename(density = starts_with("pred")) 
 
 
 map_percent_strata <- latlong_orig %>% 
-  inner_join(.,percent_strata,
+  left_join(.,percent_strata,
              by = "strata_name") %>% 
   filter(!is.na(breeding),
-         breeding > 0)
+         breeding > 0) %>% 
+  mutate(source = "eBird")
 
 
 map_abundance_strata <- latlong_orig %>% 
-  inner_join(.,abundance_strata,
+  left_join(.,abundance_strata,
              by = "strata_name") %>% 
   filter(!is.na(breeding),
-         breeding > 0)
+         breeding > 0) %>% 
+  mutate(source = "eBird")
+
+map_percent_bam_strata <- latlong_orig %>% 
+  mutate(area_km = st_area(latlong_orig)/1e6) %>% 
+  left_join(.,density_strata_bam,
+             by = "strata_name") %>% 
+  filter(!is.na(density),
+         density > 0.005) %>% 
+  mutate(abundance = as.numeric(density*area_km),
+         breeding = as.numeric(abundance/(sum(abundance))),
+         source = "BAM")
+
+map_percent_strata_both <- map_percent_strata %>% 
+  bind_rows(map_percent_bam_strata)
+bb <- st_bbox(map_percent_strata_both)
+
+
+bbs_range <- stratify(species,by = "latlong") %>% 
+  prepare_data(.,
+               min_n_routes = 1,
+               min_max_route_years = 2) 
+
+strata_map_w_bbs <- load_map("latlong") %>% 
+  filter(strata_name %in% bbs_range$meta_strata) %>% 
+  mutate(bbs = TRUE)
 
 
 map_percent <- ggplot()+
-  geom_sf(data = map_percent_strata,
-          aes(fill = breeding))
-map_abundance <- ggplot()+
-  geom_sf(data = map_abundance_strata,
-          aes(fill = breeding))
+  geom_sf(data = map_percent_strata_both,
+          aes(fill = breeding))+
+  guides(fill = guide_colorbar(title = "Proportion of \n population (eBird)"))+
+  geom_sf(data = load_map("bbs_usgs"), fill = NA, colour = grey(0.5))+
+  geom_sf(data = strata_map_w_bbs, fill = NA, colour = grey(0.2))+
+  scale_fill_viridis_b() +
+    coord_sf(xlim = c(bb[c("xmin","xmax")]),
+             ylim = c(bb[c("ymin","ymax")]))+
+  theme_bw()+
+  facet_wrap(facets = vars(source))
 
-print(map_percent / map_abundance)
+map_percent
+#map_abundance <- ggplot()+
+#  geom_sf(data = map_abundance_strata,
+#          aes(fill = breeding))+
+#  guides(fill = guide_colorbar(title = "Predicted \n abundance"))+
+#  scale_fill_viridis_c()
+
+
+
+# 
+# map_density <- ggplot()+
+#   geom_sf(data = map_percent_bam_strata,
+#           aes(fill = breeding))+
+#   guides(fill = guide_colorbar(title = "Proportion of \n population"))+
+#   scale_fill_viridis_c()
+# 
+
+pdf("figures/eBird_BAM_distribution_comparison.pdf",
+    width = 11,
+    height = 8.5)
+print(map_percent)
+dev.off()
+
+# 
+# map_both_percent <- map_percent_strata %>% 
+#   bind_rows(., map_percent_bam_strata)
+# 
+# map_percent_facet <- ggplot()+
+#   geom_sf(data = map_both_percent,
+#           aes(fill = breeding))+
+#   guides(fill = guide_colorbar(title = "Proportion of \n population"))+
+#   scale_fill_viridis_c() + 
+#   facet_wrap(vars(source))
+# 
+# map_percent_facet
 
 
 ```
 
 ### mismatches in range through time
 
-There are some important mismatches between the eBird breeding range and the BBS breeding range (i.e., the regions with BBS observations). These may reflect changes in the species' breeding range through time (e.g., Connecticut Warbler's range shifting North since 1966).
+There are some important mismatches between the eBird breeding range and the BBS breeding range (i.e., the regions with BBS observations). These may reflect changes in the species' breeding range through time (e.g., `species`'s range shifting North since 1966).
 
-```{r}
+```{r, message=FALSE,warning=FALSE}
 
-bbs_range <- stratify("Connecticut Warbler",by = "latlong") %>% 
-  prepare_data(.,
-               min_n_routes = 1,
-               min_max_route_years = 2) 
-strata_w_bbs <- bbs_range$meta_strata %>% 
-  select(strata_name) %>% 
-  mutate(bbs = TRUE)
 
-strata_w_eBird <- abundance_strata %>% 
+strata_w_eBird <- map_percent_strata_both %>% 
   filter(breeding > 0) %>% 
-  select(strata_name, breeding) %>% 
+  select(strata_name, breeding, source) %>% 
   mutate(ebird = TRUE)
 
 strata_w_either <- full_join(strata_w_bbs,
@@ -145,14 +215,13 @@ overlap_map <- ggplot()+
   scale_colour_viridis_d(aesthetics = "fill")+
   labs(subtitle = paste(species,"strata with BBS observations and eBird \n breeding season relative abundance estimates"))+
   theme_bw()+
-  theme(plot.subtitle = element_text(size = 8),
-        legend.title = element_blank())
+  theme(plot.subtitle = element_text(size = 8))
 
 overlap_map
 ```
 
 ```{r,echo=FALSE,eval=FALSE}
-pdf("Figures/BBS_eBird_coverage.pdf",
+pdf(paste0("Figures/BBS_eBird_coverage",species,".pdf"),
     width = 7.5,
     height = 7)
 overlap_map
@@ -174,14 +243,16 @@ For example, the eBird breeding period for `r species` only includes a two week 
 An alternative to using the breeding season relative abundance is to re-calculate a BBS-season relative abundance using the weekly relative abundance values. Here, I've used just the median relative abundance values and averaged them over the BBS-survey window.
 
 ```{r}
-abd_weekly_abundance <- load_raster(path, product = "abundance", 
+abd_weekly_abundance <- load_raster(species = species,
+                                    product = "abundance", 
                                  period = "weekly", metric = "median", 
-                                 resolution = "hr") #3km high resolution
+                                 resolution = "3km") #3km high resolution
 
 weeks_in_bbs <- names(abd_weekly_abundance) %>% 
   lubridate::as_date() 
   
-weeks_in_bbs <- as.character(weeks_in_bbs[which(weeks_in_bbs > as_date("2021-06-01") & weeks_in_bbs < as_date("2021-07-10"))])
+# approximate and excluding late May given the northern distribution
+weeks_in_bbs <- as.character(weeks_in_bbs[which(weeks_in_bbs > as_date("2022-05-27") & weeks_in_bbs < as_date("2022-07-10"))])
 
 abd_bbs_season_mean <- extract(abd_weekly_abundance,latlong,
                                fun = sum,
@@ -202,7 +273,7 @@ strata_w_eBird2 <- abd_bbs_season_mean %>%
   select(strata_name, breeding_bbs) %>% 
   mutate(ebird = TRUE)
 
-strata_w_either <- full_join(strata_w_bbs,
+strata_w_either2 <- full_join(strata_w_bbs,
                              strata_w_eBird2,
                              by = "strata_name") %>% 
   mutate(ebird = ifelse(is.na(ebird),FALSE,ebird),
@@ -214,17 +285,17 @@ strata_w_either <- full_join(strata_w_bbs,
                                     "eBird only",
                                     "Both")))
 
-map_strata_w_either = latlong_orig %>% 
-  inner_join(strata_w_either,
+map_strata_w_either2 = latlong_orig %>% 
+  inner_join(strata_w_either2,
              by = "strata_name")
 
 overlap_map2 <- ggplot()+
   geom_sf(data = load_map("bbs_usgs"),
           fill = NA)+
-  geom_sf(data = map_strata_w_either,
+  geom_sf(data = map_strata_w_either2,
           aes(fill = survey))+
   scale_colour_viridis_d(aesthetics = "fill")+
-  labs(subtitle = paste0("strata with BBS observations and eBird relative \n abundance estimates during ",gsub(weeks_in_bbs[1],pattern = "2021-", replacement = ""), " to ", gsub(weeks_in_bbs[length(weeks_in_bbs)],pattern = "2021-", replacement = "")))+
+  labs(subtitle = paste0("strata with BBS observations and eBird relative \n abundance estimates during ",gsub(weeks_in_bbs[1],pattern = "2022-", replacement = ""), " to ", gsub(weeks_in_bbs[length(weeks_in_bbs)],pattern = "2022-", replacement = "")))+
   theme_bw()+
   theme(plot.subtitle = element_text(size = 8))
 
@@ -234,13 +305,13 @@ overlap_map + overlap_map2 + plot_layout(guides = "collect")
 ```
 
 ```{r, echo=FALSE, eval=FALSE}
-pdf(paste0("Figures/BBS-eBird Connecticut Warbler breeding range overlap alternate.pdf"), width = 11, height = 8.5)
+pdf(paste0("Figures/BBS-eBird ",species," breeding range overlap alternate.pdf"), width = 11, height = 8.5)
 overlap_map + overlap_map2 + plot_layout(guides = "collect")
 dev.off()
 
 ```
 
-For `r paste(species)`, expanding the breeding season beyond the weeks identified in the eBird status and trend products does not seem to improve the overlap between BBS and eBird. This suggests that the mismatch is largely a function of a shift in the species' range since the early years of the BBS surveys. Therefore, a better approach to reonciling the two sources of information may be to create a spatial join, where the strata with BBS observations are asigned the relative abundance values of their nearest neighbour strata that do have relative abundance information.
+For `r paste(species)`, expanding the breeding season beyond the weeks identified in the eBird status and trend products does not seem to improve the overlap between BBS and eBird. This suggests that the mismatch is largely a function of a shift in the species' range since the early years of the BBS surveys. Therefore, a better approach to reconciling the two sources of information may be to create a spatial join, where the strata with BBS observations are assigned the relative abundance values of their nearest neighbour strata that do have relative abundance information.
 
 ```{r}
 
@@ -300,7 +371,7 @@ final_ebird_abundance_strata <- strata_map_eBird %>%
          with_bbs = ifelse(strata_name %in% strata_w_bbs$strata_name,
                            TRUE,FALSE)) 
 ## species aou number for concise file naming
-aou <- search_species("Connecticut Warbler")[1,"aou"]
+aou <- search_species(species)[1,"aou"]
 
 
 saveRDS(final_ebird_abundance_strata,paste0("output/saved_ebird_breeding_abundance_",aou,".rds"))
@@ -319,7 +390,7 @@ xlm <- bbox[c("xmin","xmax")]
 ylm <- bbox[c("ymin","ymax")] 
 
 capt <- paste0("Overlap of 1-degree grid-cells with long-term BBS monitoring data (grey outlined cells) 
-               and the eBird estimated proportion of Connecticut Warbler population during the breeding season.
+               and the eBird estimated proportion of ",species," population during the breeding season.
                Approximately ",100*round(p_covered$percent_breeding,2),
               "% of the species' population is within the 1-degree grid cells
               with BBS monitoring data")
@@ -333,8 +404,8 @@ test_map <- ggplot()+
           linewidth = 0.7)+
   geom_sf(data = strata_base_map,
           fill = NA,
-          colour = grey(0.7),
-          linewidth = 0.4)+
+          colour = grey(0.8),
+          linewidth = 0.25)+
     coord_sf(xlim = xlm,ylim = ylm)+
   theme_bw()+
   labs(caption = capt)+
@@ -347,7 +418,7 @@ test_map
 ```
 
 ```{r}
-pdf("figures/Overlap BBS monitoring with breeding season population.pdf",
+pdf(paste0("figures/Overlap BBS monitoring with breeding season population",species,".pdf"),
     width = 7.5,
     height = 7)
 test_map
