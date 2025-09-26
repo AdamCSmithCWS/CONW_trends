@@ -1,8 +1,10 @@
-# CONW_trends
+# Connecticut Warbler trends
 Estimating population trends for Connecticut Warbler
 
 Connecticut Warbler population trends are partly dependent on the model and the underlying geographic stratifications.
 
-To explore the among-model variation in our understanding of the species' population trends, we fit the data to two models, each at two different spatial-grained stratifications. The two models are a GAMYE and a first-difference model (). The two stratifications are a coarse-grained stratification based on the intersection of BCRs (Bird Conservation Regions) that we refer to here as the "bbs_usgs" and a finer-grained stratification based on a latitude by longitude 1-degree grid-cell that we refer to here as "latlong".  
+This repository contains the code and data necessary to reproduce the analyses and figures in Grinde et al. (in review).
+
+The Quarto file "All_trend_analyses_and_plotting.qmd" contains all of the code necessary to reproduce the trend analyses in the paper. It also includes code to assess the coverage of BBS surveys based on the eBird relative abundance surface.
 
 
