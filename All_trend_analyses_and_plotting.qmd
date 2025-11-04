@@ -1,5 +1,5 @@
 ---
-title: "Code and data supplement to Grinde et al."
+title: "Code and data supplement"
 format: pdf
 editor: visual
 ---
@@ -8,7 +8,7 @@ editor: visual
 
 Connecticut Warbler population trends are partly dependent on the model and the underlying geographic stratifications.
 
-To explore the among-model variation in our understanding of the species' population trends, we fit the data to two models, each at two different stratifications to estimate trends at different spatial-grains. The two models are a GAMYE and a first-difference model (). The two stratifications are: 1) coarse-grained stratification based on the intersection of political jurisdictions (states, provinces, territories) and Bird Conservation Regions, (BCRs) that we refer to in the code as the `"bbs_usgs"` (in the paper "BBS" stratification) and a finer-grained stratification based on a latitude by longitude 1-degree grid-cell that we refer to in the code as `"latlong"` (in the paper "1-degree cell" stratification)
+To explore the among-model variation in our understanding of the species' population trends, we fit the data to two models, each at two different stratifications to estimate trends at different spatial-grains. The two models are a GAMYE and a first-difference model (see Smith et al. 2024, https://doi.org/10.1093/ornithapp/duad056). The two stratifications are: 1) coarse-grained stratification based on the intersection of political jurisdictions (states, provinces, territories) and Bird Conservation Regions, (BCRs) that we refer to in the code as the `"bbs_usgs"` (in the paper "BBS" stratification) and a finer-grained stratification based on a latitude by longitude 1-degree grid-cell that we refer to in the code as `"latlong"` (in the paper "1-degree cell" stratification)
 
 ## Model fitting
 
@@ -583,12 +583,13 @@ base_map1 <- load_map("prov_state")
 base_map2 <- load_map("bcr")
 
 latlong_trend <- ggplot()+
-  geom_sf(data = base_map1,
-          fill = NA,
-          colour = grey(0.7))+
   geom_sf(data = base_map2,
           fill = NA,
-          colour = grey(0.4))+
+          colour = "tan",
+          linetype = 3)+
+  geom_sf(data = base_map1,
+          fill = NA,
+          colour = grey(0.65))+
   geom_sf(data = latlong_map,
           aes(fill = trends_map))+
   coord_sf(xlim = xlm,ylim = ylm)+
@@ -734,13 +735,13 @@ dev.off()
 
 
 pdf("figures/trend_maps_latlong.pdf",
-    width = 6,
+    width = 7.5,
     height = 10)
 latlong_trend
 dev.off()
 
 pdf("figures/trend_se_maps_latlong.pdf",
-    width = 6,
+    width = 7.5,
     height = 10)
 latlong_trend_se
 dev.off()
@@ -748,13 +749,13 @@ dev.off()
 
 
 pdf("figures/trend_maps_bbs.pdf",
-    width = 6,
+    width = 7.5,
     height = 10)
 bbs_trend
 dev.off()
 
 pdf("figures/trend_se_maps_bbs.pdf",
-    width = 6,
+    width = 7.5,
     height = 10)
 bbs_trend_se
 dev.off()
